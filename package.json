@@ -4,11 +4,10 @@
   "description": "Right-sidebar live preview for UI work: an embedded web page, or a live window capture of a running app such as Godot.",
   "license": "MIT",
   "author": "prophetcrab",
-  "homepage": "https://github.com/prophetcrab/dsh-plugins/tree/main/plugins/dsh-live-preview",
+  "homepage": "https://github.com/prophetcrab/dsh-live-preview#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/prophetcrab/dsh-plugins.git",
-    "directory": "plugins/dsh-live-preview"
+    "url": "git+https://github.com/prophetcrab/dsh-live-preview.git"
   },
   "keywords": [
     "dsh",
