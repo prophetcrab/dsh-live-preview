@@ -1,0 +1,51 @@
+{
+  "name": "dsh-live-preview",
+  "version": "0.2.3",
+  "description": "Right-sidebar live preview for UI work: an embedded web page, or a live window capture of a running app such as Godot.",
+  "license": "MIT",
+  "author": "prophetcrab",
+  "homepage": "https://github.com/prophetcrab/dsh-plugins/tree/main/plugins/dsh-live-preview",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prophetcrab/dsh-plugins.git",
+    "directory": "plugins/dsh-live-preview"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "preview",
+    "live-preview",
+    "godot",
+    "screenshot"
+  ],
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "bin/window-list",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+# Live preview: one right-Sidebar tab type that shows either an embedded web
+# page or live JPEG frames captured from a running window (Godot, a dev app).
+# The Host row serves window enumeration and frame capture; the Client row adds
+# the tab and its body.
+- insert:
+    - id: live-preview
+      name: dsh-live-preview
