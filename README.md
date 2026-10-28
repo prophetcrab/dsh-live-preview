@@ -49,3 +49,13 @@ on the same port count as the same origin.
 
 A browser-level check for this flow lives at `GET /live-preview/selftest` — it fetches the resolved
 URL, loads it in a sandboxed iframe and reports PASS/FAIL in the page.
+
+## Known limit: the app cannot preview itself in web mode
+
+The desktop GUI allows a single client connection, so a same-origin iframe of `dsh-app://app` boots and then stalls at
+"Loading plugins…". The panel detects this target and offers the two working options instead of a dead frame:
+
+- **Open in window** — a separate window is a normal top-level client and loads fully.
+- **Watch this window instead** — switch to capture mode and preview the Harness window itself at 2/5/8 fps.
+
+Unrelated pages (dev servers, ComfyUI, Godot web exports) embed normally in web mode.

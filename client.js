@@ -25,6 +25,9 @@ window.__ModuleLoader__.load({
       web: 'Web',
       thisApp: 'This app',
       openWindow: 'Open in window',
+      selfTitle: 'The app cannot preview itself',
+      selfBody: 'DeepSeek Harness allows a single client connection, so embedding it in its own tab stalls at "Loading plugins…". Open it in a separate window, or watch this window through capture mode.',
+      selfCapture: 'Watch this window instead',
       emptyFrameTitle: 'The preview stayed empty',
       emptyFrameBody: 'An embedded app that refuses framing can be opened in its own window instead.',
       frameInfo: 'frame',
@@ -54,6 +57,9 @@ window.__ModuleLoader__.load({
       web: '网页',
       thisApp: '本应用',
       openWindow: '新窗口打开',
+      selfTitle: '本应用不能内嵌自身',
+      selfBody: 'DeepSeek Harness 只接受一个客户端连接，嵌在自己的标签里会一直停在 Loading plugins。可以改成独立窗口打开，或用窗口捕获的方式在侧栏里实时看这个窗口。',
+      selfCapture: '用窗口捕获看这个窗口',
       emptyFrameTitle: '画面一直是空的',
       emptyFrameBody: '有些页面不允许被内嵌，可以直接在新窗口打开。',
       frameInfo: '画面',
@@ -355,6 +361,15 @@ window.__ModuleLoader__.load({
         return () => window.clearInterval(timer)
       }, [mode, frameUrl, t])
 
+      const originOf = (value) => {
+        try { return new URL(value).origin } catch { return '' }
+      }
+      const isSelfTarget = committedUrl.trim() !== '' && (() => {
+        const target = originOf(committedUrl)
+        if (target === '') return false
+        return target === window.location.origin || (appUrl !== '' && target === originOf(appUrl))
+      })()
+
       const submitUrl = () => {
         const next = normalizeUrl(url)
         setUrl(next)
@@ -433,6 +448,31 @@ window.__ModuleLoader__.load({
         notice = h(StatusNotice, { title: t('title'), body: t('emptyUrl') })
       } else if (mode === 'window' && status.phase === 'ready' && !status.screenRecording) {
         notice = h(StatusNotice, { title: t('permissionTitle'), body: t('permissionBody') })
+      } else if (mode === 'web' && isSelfTarget) {
+        notice = h('div', { style: styles.notice },
+          h('div', { style: styles.noticeTitle }, t('selfTitle')),
+          h('div', null, t('selfBody')),
+          h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
+            h('button', {
+              type: 'button',
+              style: styles.button,
+              onClick: () => window.open(frameUrl !== '' ? frameUrl : committedUrl, '_blank', 'noopener,noreferrer'),
+            }, t('openWindow')),
+            h('button', {
+              type: 'button',
+              style: styles.button,
+              onClick: () => {
+                setMode('window')
+                const target = status.windows.find(item => (item.app ?? '').includes('DeepSeek'))
+                if (target !== undefined) {
+                  setWindowId(target.id)
+                  setTargetApp(target.app)
+                }
+                loadStatus()
+              },
+            }, t('selfCapture')),
+          ),
+        )
       } else if (mode === 'web' && frameEmpty) {
         notice = h('div', { style: styles.notice },
           h('div', { style: styles.noticeTitle }, t('emptyFrameTitle')),
@@ -481,7 +521,7 @@ window.__ModuleLoader__.load({
         ),
         mode === 'web' && frameInfo !== '' && h('div', { style: styles.hint, title: frameInfo }, frameInfo),
         h('div', { style: styles.viewport },
-          mode === 'web' && committedUrl.trim() !== '' && h('iframe', {
+          mode === 'web' && committedUrl.trim() !== '' && !isSelfTarget && h('iframe', {
             key: `${frameUrl}#${reloadKey}`,
             src: frameUrl,
             'data-live-preview-frame': '',
