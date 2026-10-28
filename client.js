@@ -147,7 +147,7 @@ window.__ModuleLoader__.load({
     function normalizeUrl(value) {
       const text = value.trim()
       if (text === '') return ''
-      if (/^https?:\/\//i.test(text)) return text
+      if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return text
       return `http://${text}`
     }
 
@@ -192,6 +192,7 @@ window.__ModuleLoader__.load({
       const [suggestion, setSuggestion] = React.useState(null)
       const [frameInfo, setFrameInfo] = React.useState('')
       const [frameEmpty, setFrameEmpty] = React.useState(false)
+      const [appUrl, setAppUrl] = React.useState('')
       const [windowId, setWindowId] = React.useState(typeof stored.windowId === 'number' ? stored.windowId : null)
       const [targetApp, setTargetApp] = React.useState(typeof stored.app === 'string' ? stored.app : null)
       const [rate, setRate] = React.useState(stored.rate === 2 || stored.rate === 8 ? stored.rate : 5)
@@ -264,6 +265,18 @@ window.__ModuleLoader__.load({
       // Resolve the final URL first: the Harness GUI itself sits behind a launch
       // token, so a same-origin iframe needs the token on its first request. The
       // host returns every other URL untouched.
+      React.useEffect(() => {
+        let cancelled = false
+        fetch('/live-preview/app-url', { cache: 'no-store' })
+          .then(response => (response.ok ? response.json() : null))
+          .then((body) => {
+            if (cancelled || body === null || typeof body.url !== 'string') return
+            setAppUrl(body.url)
+          })
+          .catch(() => {})
+        return () => { cancelled = true }
+      }, [])
+
       React.useEffect(() => {
         let cancelled = false
         if (committedUrl.trim() === '') {
@@ -366,7 +379,8 @@ window.__ModuleLoader__.load({
               style: styles.button,
               title: t('thisApp'),
               onClick: () => {
-                const next = `${window.location.origin}/`
+                const own = `${window.location.origin}/`
+                const next = own !== 'null/' ? own : appUrl
                 setUrl(next)
                 setCommittedUrl(next)
               },

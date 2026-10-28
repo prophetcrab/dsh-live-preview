@@ -36,6 +36,7 @@ const FRAME_PATH = '/live-preview/frame'
 const EVENTS_PATH = '/live-preview/events'
 const AUTH_URL_PATH = '/live-preview/auth-url'
 const SELFTEST_PATH = '/live-preview/selftest'
+const APP_URL_PATH = '/live-preview/app-url'
 const WINDOW_LIST = fileURLToPath(new URL('./bin/window-list', import.meta.url))
 const SCREENCAPTURE = '/usr/sbin/screencapture'
 const TMP_PREFIX = 'dsh-live-preview-'
@@ -321,9 +322,10 @@ export function apply(ctx) {
   })
 
   ctx.inject(['webServer'], (child) => {
-    // The Harness GUI itself is behind a launch-token cookie; an iframe pointing at
-    // the same origin needs the token on its first request. Only same-origin root
-    // URLs are rewritten, everything else is returned untouched.
+    // The Harness GUI itself is behind a launch-token cookie, and the desktop app
+    // loads it from its own scheme (dsh-app://app) — so the request's Host header
+    // says nothing about the web listener. Compare against the listener's own
+    // origin instead, and hand back that origin for the "this app" shortcut.
     child.effect(() => child.webServer.register({
       kind: 'exact',
       path: AUTH_URL_PATH,
@@ -331,73 +333,68 @@ export function apply(ctx) {
         void (async () => {
           const url = new URL(req.url ?? AUTH_URL_PATH, 'http://127.0.0.1')
           const target = url.searchParams.get('url') ?? ''
+          let serverOrigin = null
+          try {
+            serverOrigin = child.webServer.getOrigin()
+          } catch {
+            serverOrigin = null
+          }
+          const loopback = hostname => hostname === '127.0.0.1' || hostname === 'localhost'
           let next = target
           let suggestion
           try {
             const parsed = new URL(target)
-            const requestHost = new URL(`http://${req.headers.host ?? '127.0.0.1'}`)
-            const loopback = host => host.hostname === '127.0.0.1' || host.hostname === 'localhost'
-            const sameOrigin = (parsed.protocol === 'http:' || parsed.protocol === 'https:')
-              && ((parsed.host === requestHost.host)
-                || (loopback(parsed) && loopback(requestHost) && parsed.port === requestHost.port))
-            if (sameOrigin && parsed.pathname === '/') {
-              const connection = ctx.get('connection')
-              if (connection !== undefined && typeof connection.authenticatedUrl === 'function') {
-                next = connection.authenticatedUrl(parsed.href)
+            if (serverOrigin !== null) {
+              const own = new URL(serverOrigin)
+              const samePort = parsed.port === own.port
+              const sameHost = parsed.host === own.host
+                || (loopback(parsed.hostname) && loopback(own.hostname))
+              const httpish = parsed.protocol === 'http:' || parsed.protocol === 'https:'
+              if (httpish && samePort && sameHost && parsed.pathname === '/') {
+                const connection = ctx.get('connection')
+                if (connection !== undefined && typeof connection.authenticatedUrl === 'function') {
+                  next = connection.authenticatedUrl(parsed.href)
+                }
+              } else if (httpish && loopback(parsed.hostname)) {
+                const reachable = await new Promise((resolveProbe) => {
+                  const timer = setTimeout(() => resolveProbe(false), 900)
+                  fetch(`${parsed.origin}/`, { method: 'HEAD', signal: AbortSignal.timeout(900) })
+                    .then(() => resolveProbe(true))
+                    .catch(() => resolveProbe(false))
+                    .finally(() => clearTimeout(timer))
+                })
+                if (!reachable) suggestion = `${serverOrigin}/`
               }
-            } else if (loopback(parsed) && loopback(requestHost)) {
-              // A stale port (the app restarted) refuses connections; offer the
-              // current app origin instead of leaving the user with ERR_CONNECTION_REFUSED.
-              const reachable = await new Promise((resolveProbe) => {
-                const timer = setTimeout(() => resolveProbe(false), 900)
-                fetch(`${parsed.origin}/`, { method: 'HEAD', signal: AbortSignal.timeout(900) })
-                  .then(() => resolveProbe(true))
-                  .catch(() => resolveProbe(false))
-                  .finally(() => clearTimeout(timer))
-              })
-              if (!reachable) suggestion = `${requestHost.origin}/`
             }
           } catch {
             // Not a URL: hand the original value back and let the iframe try.
           }
-          sendJson(res, 200, suggestion === undefined ? { url: next } : { url: next, suggestion })
+          const body = { url: next }
+          if (suggestion !== undefined) body.suggestion = suggestion
+          if (serverOrigin !== null) body.appUrl = `${serverOrigin}/`
+          sendJson(res, 200, body)
         })().catch((error) => {
           if (!res.headersSent) sendJson(res, 500, { error: String(error?.message ?? error) })
         })
       },
     }), 'live-preview: auth-url route')
 
-
+    // The address the desktop app's own web listener answers on; the panel uses
+    // it for the "this app" shortcut because window.location.origin is the
+    // dsh-app:// scheme inside Electron.
     child.effect(() => child.webServer.register({
       kind: 'exact',
-      path: STATUS_PATH,
+      path: APP_URL_PATH,
       handler: (req, res) => {
-        if (req.method !== 'GET' && req.method !== 'HEAD') {
-          res.writeHead(405, { allow: 'GET, HEAD' })
-          res.end()
-          return
+        let origin = null
+        try {
+          origin = child.webServer.getOrigin()
+        } catch {
+          origin = null
         }
-        void (async () => {
-          const [screenRecording, listed] = await Promise.all([screenRecordingAvailable(), listWindows()])
-          const body = JSON.stringify({
-            generatedAt: new Date().toISOString(),
-            screenRecording,
-            windows: listed.windows,
-            error: listed.error,
-          })
-          const payload = Buffer.from(body, 'utf8')
-          res.writeHead(200, {
-            'content-type': 'application/json; charset=utf-8',
-            'content-length': String(payload.length),
-            'cache-control': 'no-store',
-          })
-          res.end(req.method === 'HEAD' ? undefined : payload)
-        })().catch((error) => {
-          if (!res.headersSent) sendJson(res, 500, { error: String(error?.message ?? error) })
-          else res.destroy()
-        })
+        sendJson(res, 200, { url: origin === null ? null : `${origin}/` })
       },
-    }), 'live-preview: status route')
+    }), 'live-preview: app-url route')
 
     child.effect(() => child.webServer.register({
       kind: 'exact',
