@@ -34,6 +34,7 @@ export const inject = ['webServer', 'tools', 'systemPrompt']
 const STATUS_PATH = '/live-preview/status'
 const FRAME_PATH = '/live-preview/frame'
 const EVENTS_PATH = '/live-preview/events'
+const AUTH_URL_PATH = '/live-preview/auth-url'
 const WINDOW_LIST = fileURLToPath(new URL('./bin/window-list', import.meta.url))
 const SCREENCAPTURE = '/usr/sbin/screencapture'
 const TMP_PREFIX = 'dsh-live-preview-'
@@ -319,6 +320,41 @@ export function apply(ctx) {
   })
 
   ctx.inject(['webServer'], (child) => {
+    // The Harness GUI itself is behind a launch-token cookie; an iframe pointing at
+    // the same origin needs the token on its first request. Only same-origin root
+    // URLs are rewritten, everything else is returned untouched.
+    child.effect(() => child.webServer.register({
+      kind: 'exact',
+      path: AUTH_URL_PATH,
+      handler: (req, res) => {
+        void (async () => {
+          const url = new URL(req.url ?? AUTH_URL_PATH, 'http://127.0.0.1')
+          const target = url.searchParams.get('url') ?? ''
+          let next = target
+          try {
+            const parsed = new URL(target)
+            const requestHost = new URL(`http://${req.headers.host ?? '127.0.0.1'}`)
+            const loopback = host => host.hostname === '127.0.0.1' || host.hostname === 'localhost'
+            const sameOrigin = (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+              && ((parsed.host === requestHost.host)
+                || (loopback(parsed) && loopback(requestHost) && parsed.port === requestHost.port))
+            if (sameOrigin && parsed.pathname === '/') {
+              const connection = ctx.get('connection')
+              if (connection !== undefined && typeof connection.authenticatedUrl === 'function') {
+                next = connection.authenticatedUrl(parsed.href)
+              }
+            }
+          } catch {
+            // Not a URL: hand the original value back and let the iframe try.
+          }
+          sendJson(res, 200, { url: next })
+        })().catch((error) => {
+          if (!res.headersSent) sendJson(res, 500, { error: String(error?.message ?? error) })
+        })
+      },
+    }), 'live-preview: auth-url route')
+
+
     child.effect(() => child.webServer.register({
       kind: 'exact',
       path: STATUS_PATH,

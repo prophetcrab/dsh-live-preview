@@ -1,6 +1,6 @@
 {
   "name": "dsh-live-preview",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "description": "Right-sidebar live preview for UI work: an embedded web page, or a live window capture of a running app such as Godot.",
   "license": "MIT",
   "author": "prophetcrab",

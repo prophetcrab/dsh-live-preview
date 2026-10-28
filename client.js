@@ -172,6 +172,7 @@ window.__ModuleLoader__.load({
       const [mode, setMode] = React.useState(stored.mode === 'window' ? 'window' : 'web')
       const [url, setUrl] = React.useState(typeof stored.url === 'string' ? stored.url : 'http://localhost:5173/')
       const [committedUrl, setCommittedUrl] = React.useState(typeof stored.url === 'string' ? stored.url : 'http://localhost:5173/')
+      const [frameUrl, setFrameUrl] = React.useState('')
       const [windowId, setWindowId] = React.useState(typeof stored.windowId === 'number' ? stored.windowId : null)
       const [targetApp, setTargetApp] = React.useState(typeof stored.app === 'string' ? stored.app : null)
       const [rate, setRate] = React.useState(stored.rate === 2 || stored.rate === 8 ? stored.rate : 5)
@@ -240,6 +241,22 @@ window.__ModuleLoader__.load({
           setFrameError(null)
         }
       }, [status, mode, windowId, targetApp])
+
+      // Resolve the final URL first: the Harness GUI itself sits behind a launch
+      // token, so a same-origin iframe needs the token on its first request. The
+      // host returns every other URL untouched.
+      React.useEffect(() => {
+        let cancelled = false
+        if (committedUrl.trim() === '') {
+          setFrameUrl('')
+          return () => { cancelled = true }
+        }
+        fetch(`/live-preview/auth-url?url=${encodeURIComponent(committedUrl)}`, { cache: 'no-store' })
+          .then(response => (response.ok ? response.json() : null))
+          .then((body) => { if (!cancelled && body !== null && typeof body.url === 'string') setFrameUrl(body.url) })
+          .catch(() => { if (!cancelled) setFrameUrl(committedUrl) })
+        return () => { cancelled = true }
+      }, [committedUrl, reloadKey])
 
       // Follow what the agent pushed: mode, URL, window and frame rate all move
       // without reopening the tab.
@@ -358,8 +375,8 @@ window.__ModuleLoader__.load({
         ),
         h('div', { style: styles.viewport },
           mode === 'web' && committedUrl.trim() !== '' && h('iframe', {
-            key: `${committedUrl}#${reloadKey}`,
-            src: committedUrl,
+            key: `${frameUrl}#${reloadKey}`,
+            src: frameUrl,
             style: styles.frame,
             title: t('title'),
             allow: 'clipboard-read; clipboard-write; fullscreen',
