@@ -37,3 +37,15 @@ Then include the bundle in `dsh.profile.bundles` (or add its `cordis.patch.yml` 
 ## License
 
 MIT
+
+## Previewing the Harness GUI itself
+
+The web GUI is served behind a launch-token cookie, so a plain iframe pointed at it returns
+`dsh web authentication required`. The preview resolves its target through
+`GET /live-preview/auth-url?url=...` first: when the URL is this app's own origin and root path, the
+reply carries `connection.authenticatedUrl(...)` (the launch token), the iframe exchanges it for the
+session cookie and the GUI loads; every other URL is returned untouched. `localhost` and `127.0.0.1`
+on the same port count as the same origin.
+
+A browser-level check for this flow lives at `GET /live-preview/selftest` — it fetches the resolved
+URL, loads it in a sandboxed iframe and reports PASS/FAIL in the page.

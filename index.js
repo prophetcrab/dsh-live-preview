@@ -35,6 +35,7 @@ const STATUS_PATH = '/live-preview/status'
 const FRAME_PATH = '/live-preview/frame'
 const EVENTS_PATH = '/live-preview/events'
 const AUTH_URL_PATH = '/live-preview/auth-url'
+const SELFTEST_PATH = '/live-preview/selftest'
 const WINDOW_LIST = fileURLToPath(new URL('./bin/window-list', import.meta.url))
 const SCREENCAPTURE = '/usr/sbin/screencapture'
 const TMP_PREFIX = 'dsh-live-preview-'
@@ -428,6 +429,76 @@ export function apply(ctx) {
         })
       },
     }), 'live-preview: frame route')
+
+    // A tiny browser self-test: fetch the authenticated URL, load it in a
+    // sandboxed iframe, and report whether the Harness GUI came up instead of
+    // the "authentication required" page.
+    child.effect(() => child.webServer.register({
+      kind: 'exact',
+      path: SELFTEST_PATH,
+      handler: (req, res) => {
+        const html = [
+          '<!doctype html><meta charset="utf-8"><title>live-preview selftest</title>',
+          '<style>body{font:14px -apple-system,system-ui;margin:24px;color:#1d1d1f}h1{font-size:18px}',
+          'pre{background:#f5f5f7;padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-all}',
+          'iframe{width:100%;height:520px;border:1px solid #d2d2d7;border-radius:8px;margin-top:12px}',
+          '.ok{color:#1a7f37;font-weight:700}.bad{color:#c00;font-weight:700}</style>',
+          '<h1>live-preview self-test</h1><div id="status">running</div><pre id="detail"></pre>',
+          '<iframe id="frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>',
+          '<script>',
+          'var NL = String.fromCharCode(10)',
+          'var status = document.getElementById("status")',
+          'var detail = document.getElementById("detail")',
+          'var frame = document.getElementById("frame")',
+          'var target = location.origin + "/"',
+          'function log(line) { detail.textContent = detail.textContent + line + NL }',
+          'log("fetching auth-url for " + target)',
+          'fetch("/live-preview/auth-url?url=" + encodeURIComponent(target))',
+          '  .then(function (r) { return r.json() })',
+          '  .then(function (body) {',
+          '    log("resolved: " + body.url.replace(/token=[^&]+/, "token=<redacted>"))',
+          '    var tries = 0',
+          '    var timer = setInterval(function () {',
+          '      tries = tries + 1',
+          '      var text = ""',
+          '      try { text = (frame.contentDocument.body.textContent || "") } catch (e) { text = "" }',
+          '      if (/authentication required/i.test(text)) {',
+          '        clearInterval(timer)',
+          '        status.className = "bad"',
+          '        status.textContent = "FAIL — iframe still shows the auth page"',
+          '        log("iframe body: " + text.slice(0, 160))',
+          '        return',
+          '      }',
+          '      if (text.length > 200) {',
+          '        clearInterval(timer)',
+          '        status.className = "ok"',
+          '        status.textContent = "PASS — the GUI loaded inside the iframe"',
+          '        log("iframe DOM: " + text.slice(0, 120).replace(/\s+/g, " "))',
+          '        return',
+          '      }',
+          '      if (tries > 20) {',
+          '        clearInterval(timer)',
+          '        status.className = "bad"',
+          '        status.textContent = "FAIL — iframe stayed empty"',
+          '      }',
+          '    }, 500)',
+          '    frame.src = body.url',
+          '  })',
+          '  .catch(function (error) {',
+          '    status.className = "bad"',
+          '    status.textContent = "FAIL — request failed: " + error.message',
+          '  })',
+          '</script>',
+        ].join("\n")
+        const payload = Buffer.from(html, 'utf8')
+        res.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'content-length': String(payload.length),
+          'cache-control': 'no-store',
+        })
+        res.end(payload)
+      },
+    }), 'live-preview: selftest route')
 
     child.effect(() => child.webServer.register({
       kind: 'exact',
