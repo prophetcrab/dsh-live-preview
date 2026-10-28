@@ -526,6 +526,24 @@ window.__ModuleLoader__.load({
           locale: NS,
         }, PreviewBody)), 'live-preview: tab body')
 
+        // Restore the tab on load: once a target is stored, the pane should be
+        // there after a refresh instead of hiding behind the sidebar's guide list.
+        ctx.effect(() => {
+          const stored = readStored()
+          const hasTarget = stored.mode === 'window'
+            ? stored.windowId !== undefined && stored.windowId !== null
+            : (typeof stored.url === 'string' && stored.url !== '')
+          if (!hasTarget) return () => {}
+          const timer = window.setTimeout(() => {
+            try {
+              ctx.sidebarRight.openTab(TYPE_ID, {})
+            } catch (error) {
+              console.error('[live-preview] restore tab failed', error)
+            }
+          }, 400)
+          return () => window.clearTimeout(timer)
+        }, 'live-preview: restore tab')
+
         // The agent half: follow preview requests pushed by the Host tools and
         // bring the tab forward so the user sees the result without asking.
         ctx.effect(() => {
