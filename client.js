@@ -24,6 +24,10 @@ window.__ModuleLoader__.load({
       description: 'Embed a web page or watch a running window update live.',
       web: 'Web',
       thisApp: 'This app',
+      openWindow: 'Open in window',
+      emptyFrameTitle: 'The preview stayed empty',
+      emptyFrameBody: 'An embedded app that refuses framing can be opened in its own window instead.',
+      frameInfo: 'frame',
       staleTitle: 'Preview target unreachable',
       staleBody: 'The previewed port refused the connection (the app may have restarted on a new port).',
       staleUse: 'Use the current app address',
@@ -49,6 +53,10 @@ window.__ModuleLoader__.load({
       description: '嵌入网页，或实时查看正在运行的窗口画面。',
       web: '网页',
       thisApp: '本应用',
+      openWindow: '新窗口打开',
+      emptyFrameTitle: '画面一直是空的',
+      emptyFrameBody: '有些页面不允许被内嵌，可以直接在新窗口打开。',
+      frameInfo: '画面',
       staleTitle: '预览地址无法连接',
       staleBody: '预览的端口拒绝连接（应用可能重启后换了端口）。',
       staleUse: '改用当前应用地址',
@@ -182,6 +190,8 @@ window.__ModuleLoader__.load({
       const [committedUrl, setCommittedUrl] = React.useState(typeof stored.url === 'string' ? stored.url : 'http://localhost:5173/')
       const [frameUrl, setFrameUrl] = React.useState('')
       const [suggestion, setSuggestion] = React.useState(null)
+      const [frameInfo, setFrameInfo] = React.useState('')
+      const [frameEmpty, setFrameEmpty] = React.useState(false)
       const [windowId, setWindowId] = React.useState(typeof stored.windowId === 'number' ? stored.windowId : null)
       const [targetApp, setTargetApp] = React.useState(typeof stored.app === 'string' ? stored.app : null)
       const [rate, setRate] = React.useState(stored.rate === 2 || stored.rate === 8 ? stored.rate : 5)
@@ -261,6 +271,7 @@ window.__ModuleLoader__.load({
           return () => { cancelled = true }
         }
         setSuggestion(null)
+        setFrameEmpty(false)
         fetch(`/live-preview/auth-url?url=${encodeURIComponent(committedUrl)}`, { cache: 'no-store' })
           .then(response => (response.ok ? response.json() : null))
           .then((body) => {
@@ -309,6 +320,28 @@ window.__ModuleLoader__.load({
         return () => { window.clearInterval(timer) }
       }, [frameOn, rate])
 
+      React.useEffect(() => {
+        if (mode !== 'web' || frameUrl === '') return undefined
+        let attempts = 0
+        const timer = window.setInterval(() => {
+          attempts += 1
+          const node = document.querySelector('[data-live-preview-frame]')
+          if (node === null) return
+          try {
+            const doc = node.contentDocument
+            const href = node.contentWindow?.location?.href ?? ''
+            const title = doc?.title ?? ''
+            const bodyLength = (doc?.body?.textContent ?? '').length
+            setFrameInfo(`${t('frameInfo')}: ${href.slice(0, 60)} · title=${title.slice(0, 24)} · text=${bodyLength}`)
+            if (attempts >= 5 && bodyLength === 0) setFrameEmpty(true)
+          } catch (error) {
+            setFrameInfo(`${t('frameInfo')}: unreadable (${error instanceof Error ? error.message : String(error)})`)
+          }
+          if (attempts > 8) window.clearInterval(timer)
+        }, 1200)
+        return () => window.clearInterval(timer)
+      }, [mode, frameUrl, t])
+
       const submitUrl = () => {
         const next = normalizeUrl(url)
         setUrl(next)
@@ -339,6 +372,16 @@ window.__ModuleLoader__.load({
               },
             }, t('thisApp')),
             h('button', { key: 'go', type: 'button', style: styles.button, onClick: submitUrl }, t('refresh')),
+            h('button', {
+              key: 'open',
+              type: 'button',
+              style: styles.button,
+              title: t('openWindow'),
+              onClick: () => {
+                const target = frameUrl !== '' ? frameUrl : committedUrl
+                if (target !== '') window.open(target, '_blank', 'noopener,noreferrer')
+              },
+            }, '↗'),
           ]
         : [
             h('select', {
@@ -376,6 +419,16 @@ window.__ModuleLoader__.load({
         notice = h(StatusNotice, { title: t('title'), body: t('emptyUrl') })
       } else if (mode === 'window' && status.phase === 'ready' && !status.screenRecording) {
         notice = h(StatusNotice, { title: t('permissionTitle'), body: t('permissionBody') })
+      } else if (mode === 'web' && frameEmpty) {
+        notice = h('div', { style: styles.notice },
+          h('div', { style: styles.noticeTitle }, t('emptyFrameTitle')),
+          h('div', null, t('emptyFrameBody')),
+          h('button', {
+            type: 'button',
+            style: { ...styles.button, marginTop: '8px' },
+            onClick: () => window.open(frameUrl !== '' ? frameUrl : committedUrl, '_blank', 'noopener,noreferrer'),
+          }, t('openWindow')),
+        )
       } else if (mode === 'web' && suggestion !== null) {
         notice = h('div', { style: styles.notice },
           h('div', { style: styles.noticeTitle }, t('staleTitle')),
@@ -412,10 +465,12 @@ window.__ModuleLoader__.load({
           ),
           ...toolbar,
         ),
+        mode === 'web' && frameInfo !== '' && h('div', { style: styles.hint, title: frameInfo }, frameInfo),
         h('div', { style: styles.viewport },
           mode === 'web' && committedUrl.trim() !== '' && h('iframe', {
             key: `${frameUrl}#${reloadKey}`,
             src: frameUrl,
+            'data-live-preview-frame': '',
             style: styles.frame,
             title: t('title'),
             allow: 'clipboard-read; clipboard-write; fullscreen',
