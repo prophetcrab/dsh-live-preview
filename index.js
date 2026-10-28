@@ -332,6 +332,7 @@ export function apply(ctx) {
           const url = new URL(req.url ?? AUTH_URL_PATH, 'http://127.0.0.1')
           const target = url.searchParams.get('url') ?? ''
           let next = target
+          let suggestion
           try {
             const parsed = new URL(target)
             const requestHost = new URL(`http://${req.headers.host ?? '127.0.0.1'}`)
@@ -344,11 +345,22 @@ export function apply(ctx) {
               if (connection !== undefined && typeof connection.authenticatedUrl === 'function') {
                 next = connection.authenticatedUrl(parsed.href)
               }
+            } else if (loopback(parsed) && loopback(requestHost)) {
+              // A stale port (the app restarted) refuses connections; offer the
+              // current app origin instead of leaving the user with ERR_CONNECTION_REFUSED.
+              const reachable = await new Promise((resolveProbe) => {
+                const timer = setTimeout(() => resolveProbe(false), 900)
+                fetch(`${parsed.origin}/`, { method: 'HEAD', signal: AbortSignal.timeout(900) })
+                  .then(() => resolveProbe(true))
+                  .catch(() => resolveProbe(false))
+                  .finally(() => clearTimeout(timer))
+              })
+              if (!reachable) suggestion = `${requestHost.origin}/`
             }
           } catch {
             // Not a URL: hand the original value back and let the iframe try.
           }
-          sendJson(res, 200, { url: next })
+          sendJson(res, 200, suggestion === undefined ? { url: next } : { url: next, suggestion })
         })().catch((error) => {
           if (!res.headersSent) sendJson(res, 500, { error: String(error?.message ?? error) })
         })

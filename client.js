@@ -23,6 +23,10 @@ window.__ModuleLoader__.load({
       title: 'Live preview',
       description: 'Embed a web page or watch a running window update live.',
       web: 'Web',
+      thisApp: 'This app',
+      staleTitle: 'Preview target unreachable',
+      staleBody: 'The previewed port refused the connection (the app may have restarted on a new port).',
+      staleUse: 'Use the current app address',
       window: 'Window',
       urlPlaceholder: 'http://localhost:5173/',
       refresh: 'Reload',
@@ -44,6 +48,10 @@ window.__ModuleLoader__.load({
       title: '实时预览',
       description: '嵌入网页，或实时查看正在运行的窗口画面。',
       web: '网页',
+      thisApp: '本应用',
+      staleTitle: '预览地址无法连接',
+      staleBody: '预览的端口拒绝连接（应用可能重启后换了端口）。',
+      staleUse: '改用当前应用地址',
       window: '窗口',
       urlPlaceholder: 'http://localhost:5173/',
       refresh: '重载',
@@ -173,6 +181,7 @@ window.__ModuleLoader__.load({
       const [url, setUrl] = React.useState(typeof stored.url === 'string' ? stored.url : 'http://localhost:5173/')
       const [committedUrl, setCommittedUrl] = React.useState(typeof stored.url === 'string' ? stored.url : 'http://localhost:5173/')
       const [frameUrl, setFrameUrl] = React.useState('')
+      const [suggestion, setSuggestion] = React.useState(null)
       const [windowId, setWindowId] = React.useState(typeof stored.windowId === 'number' ? stored.windowId : null)
       const [targetApp, setTargetApp] = React.useState(typeof stored.app === 'string' ? stored.app : null)
       const [rate, setRate] = React.useState(stored.rate === 2 || stored.rate === 8 ? stored.rate : 5)
@@ -251,9 +260,14 @@ window.__ModuleLoader__.load({
           setFrameUrl('')
           return () => { cancelled = true }
         }
+        setSuggestion(null)
         fetch(`/live-preview/auth-url?url=${encodeURIComponent(committedUrl)}`, { cache: 'no-store' })
           .then(response => (response.ok ? response.json() : null))
-          .then((body) => { if (!cancelled && body !== null && typeof body.url === 'string') setFrameUrl(body.url) })
+          .then((body) => {
+            if (cancelled || body === null) return
+            if (typeof body.url === 'string') setFrameUrl(body.url)
+            setSuggestion(typeof body.suggestion === 'string' ? body.suggestion : null)
+          })
           .catch(() => { if (!cancelled) setFrameUrl(committedUrl) })
         return () => { cancelled = true }
       }, [committedUrl, reloadKey])
@@ -313,6 +327,17 @@ window.__ModuleLoader__.load({
               onChange: (event) => { setUrl(event.currentTarget.value) },
               onKeyDown: (event) => { if (event.key === 'Enter') submitUrl() },
             }),
+            h('button', {
+              key: 'this-app',
+              type: 'button',
+              style: styles.button,
+              title: t('thisApp'),
+              onClick: () => {
+                const next = `${window.location.origin}/`
+                setUrl(next)
+                setCommittedUrl(next)
+              },
+            }, t('thisApp')),
             h('button', { key: 'go', type: 'button', style: styles.button, onClick: submitUrl }, t('refresh')),
           ]
         : [
@@ -351,6 +376,20 @@ window.__ModuleLoader__.load({
         notice = h(StatusNotice, { title: t('title'), body: t('emptyUrl') })
       } else if (mode === 'window' && status.phase === 'ready' && !status.screenRecording) {
         notice = h(StatusNotice, { title: t('permissionTitle'), body: t('permissionBody') })
+      } else if (mode === 'web' && suggestion !== null) {
+        notice = h('div', { style: styles.notice },
+          h('div', { style: styles.noticeTitle }, t('staleTitle')),
+          h('div', null, t('staleBody')),
+          h('button', {
+            type: 'button',
+            style: { ...styles.button, marginTop: '8px' },
+            onClick: () => {
+              setUrl(suggestion)
+              setCommittedUrl(suggestion)
+              setSuggestion(null)
+            },
+          }, t('staleUse')),
+        )
       } else if (mode === 'window' && missing) {
         notice = h(StatusNotice, { title: t('waitingTitle'), body: `${t('waitingBody')} ${targetApp ?? ''}` })
       } else if (mode === 'window' && frameError !== null) {
